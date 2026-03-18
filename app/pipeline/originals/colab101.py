@@ -257,11 +257,16 @@ else:
     json_rows = json_data
 
 data_dict = {}
+_row33_subs = {}  # 33.1, 33.2, 33.3, 33.4 を一時保管
 for item in (json_rows or []):
     try:
-        rn = int(item.get('行番号'))
+        _rn_raw = item.get('行番号')
+        _rn_f = float(_rn_raw)
+        if _rn_f != int(_rn_f):  # 小数 = 33.1, 33.2, 33.3, 33.4
+            _row33_subs[_rn_f] = item
+            continue
+        rn = int(_rn_f)
     except Exception:
-        # 行番号が不正な行はスキップ
         continue
     item['行番号'] = rn
     data_dict[rn] = item
@@ -298,6 +303,66 @@ mapping = {
 for k, v in mapping.items():
     if k in data_dict:
         data_dict[k]["勘定科目"] = v
+
+# ── 無形固定資産サブスロット（3行展開用）
+if 33 not in data_dict:
+    data_dict[33] = {"行番号": 33, "勘定科目": "無形固定資産"}
+_r33 = data_dict[33]
+if "_sub_slots" not in _r33:
+    _r33["_sub_slots"] = [
+        {"勘定科目": "", "前々期": 0, "前期": 0, "今期": 0},
+        {"勘定科目": "", "前々期": 0, "前期": 0, "今期": 0},
+        {"勘定科目": "", "前々期": 0, "前期": 0, "今期": 0},
+    ]
+
+# ── output.json の 33.1〜33.4 を _sub_slots / 行33本体に反映
+if _row33_subs:
+    for _si, _sk in enumerate([33.1, 33.2, 33.3]):
+        if _sk in _row33_subs:
+            _sd = _row33_subs[_sk]
+            _slot = {
+                '勘定科目': _sd.get('勘定科目', ''),
+                '前々期': _sd.get('前々期', 0),
+                '前期': _sd.get('前期', 0),
+                '今期': _sd.get('今期', 0),
+                '集計方法': _sd.get('集計方法', ''),
+            }
+            # 構成比（資産合計=行45を分母）
+            _denom_row = data_dict.get(45, {})
+            for _pk in ['前々期', '前期', '今期']:
+                _v = float(_slot.get(_pk, 0) or 0)
+                _total = float(_denom_row.get(_pk, 0) or 0)
+                _slot[f'{_pk}構成比'] = round(_v / _total * 100, 2) if _total else 0.0
+            # 前年比増加率
+            _vv = float(_slot.get('前々期', 0) or 0)
+            _vp = float(_slot.get('前期', 0) or 0)
+            _vc = float(_slot.get('今期', 0) or 0)
+            _slot['前期前年比増加率'] = int(round((_vp / _vv - 1) * 100)) if _vv else 0
+            _slot['今期前年比増加率'] = int(round((_vc / _vp - 1) * 100)) if _vp else 0
+            _slot['前期増減額'] = int(_vp - _vv)
+            _slot['今期増減額'] = int(_vc - _vp)
+            _r33['_sub_slots'][_si] = _slot
+    # 33.4 = 小計 → 行33本体の金額を更新
+    if 33.4 in _row33_subs:
+        _sd4 = _row33_subs[33.4]
+        for _pk in ['前々期', '前期', '今期']:
+            _r33[_pk] = _sd4.get(_pk, _r33.get(_pk, 0))
+        _r33['集計方法'] = _sd4.get('集計方法', _r33.get('集計方法', ''))
+        try:
+            _vv = float(_r33.get('前々期', 0) or 0)
+            _vp = float(_r33.get('前期', 0) or 0)
+            _vc = float(_r33.get('今期', 0) or 0)
+            _r33['前期増減額'] = int(_vp - _vv)
+            _r33['今期増減額'] = int(_vc - _vp)
+            _r33['前期前年比増加率'] = int(round((_vp / _vv - 1) * 100)) if _vv else 0
+            _r33['今期前年比増加率'] = int(round((_vc / _vp - 1) * 100)) if _vp else 0
+            _denom_row = data_dict.get(45, {})
+            for _pk in ['前々期', '前期', '今期']:
+                _v = float(_r33.get(_pk, 0) or 0)
+                _total = float(_denom_row.get(_pk, 0) or 0)
+                _r33[f'{_pk}構成比'] = round(_v / _total * 100, 2) if _total else 0.0
+        except Exception:
+            pass
 
 # ------------------------------------------------------------------
 # 2. 計算用ヘルパー関数
@@ -3602,10 +3667,76 @@ def _write_block_rows(ws, xl_row, ranges, layout):
     cur = xl_row
     for rn in rows_in_block:
         row_to_xl[rn] = cur
-        cur += 1
+        cur += 4 if rn == 33 else 1  # 行33は4行展開
 
+        num_cols = [
+            (5,  "前々期",           NUM_FMT,  "right"),
+            (6,  "前々期構成比",     PCT_FMT,  "center"),
+            (7,  "前期",             NUM_FMT,  "right"),
+            (8,  "前期構成比",       PCT_FMT,  "center"),
+            (9,  "前期前年比増加率", PCT_FMT,  "center"),
+            (10, "今期",             NUM_FMT,  "right"),
+            (11, "今期構成比",       PCT_FMT,  "center"),
+            (12, "今期前年比増加率", PCT_FMT,  "center"),
+            (13, "前期増減額",       DIFF_FMT, "right"),
+            (14, "今期増減額",       DIFF_FMT, "right"),
+        ]
     for rn in rows_in_block:
         exr  = row_to_xl[rn]
+
+        # ── 行33 無形固定資産サブ展開
+        if rn == 33:
+            _r33_data = data_dict.get(33, {})
+            _slots = _r33_data.get('_sub_slots', [])
+            _n_slots = len(_slots) if _slots else 3
+            _sub_bg = 'FFFFFFFF'  # white for detail
+            _sub_fg = 'FF333333'
+            _lbl_bg = 'FFEBF5FB'  # same blue as 有形固定資産 (color 3)
+            _lbl_fg = 'FF333333'
+            # vertical label: col C = 無形固定資産 (merge 4 rows: 3 detail + 1 subtotal)
+            _last_xl = exr + _n_slots  # subtotal row
+            ws.merge_cells(start_row=exr, start_column=3, end_row=_last_xl, end_column=3)
+            c3 = ws.cell(row=exr, column=3)
+            c3.value = '無形固定資産'
+            c3.fill = _fill(_lbl_bg)
+            c3.font = _font(_lbl_fg, bold=True, size=8)
+            c3.alignment = _align('center', 'center', True, 255)
+            c3.border = _border()
+            # detail rows
+            for _si in range(_n_slots):
+                _sr = exr + _si
+                _slot = _slots[_si] if _si < len(_slots) else {}
+                # col D: slot account name
+                _subj = str(_slot.get('勘定科目', '') or '')
+                _safe_write(ws, _sr, 4, _subj, bg=_sub_bg, fg=_sub_fg, ha='left')
+                # data columns
+                for (col, key, fmt, ha) in num_cols:
+                    raw = _slot.get(key)
+                    val = _to_pct(raw) if fmt == PCT_FMT else _to_num(raw)
+                    _safe_write(ws, _sr, col, '' if val is None else val,
+                                bg=_sub_bg, fg=_sub_fg, ha=ha, fmt=fmt if val is not None else None)
+                _safe_write(ws, _sr, 15, '', bg=_sub_bg, fg=_sub_fg, ha='left')
+                ws.row_dimensions[_sr].height = 15
+            # subtotal row
+            _tr = exr + _n_slots
+            _tot_bg = 'FFEBF5FB'  # same blue as 有形固定資産 (color 3)
+            _tot_fg = 'FF333333'
+            # col D: 小計 (same pattern as other 小計 rows)
+            _safe_write(ws, _tr, 4, '小計', bg=_tot_bg, fg=_tot_fg, bold=True, ha='left')
+            for (col, key, fmt, ha) in num_cols:
+                raw = _r33_data.get(key)
+                val = _to_pct(raw) if fmt == PCT_FMT else _to_num(raw)
+                _safe_write(ws, _tr, col, '' if val is None else val,
+                            bg=_tot_bg, fg=_tot_fg, bold=True, ha=ha, fmt=fmt if val is not None else None)
+            memo = str(_r33_data.get('集計方法', '') or '')
+            if memo in ('""',"\"\""):  memo = ""
+            if memo.startswith('Python'): memo = memo[6:]
+            _safe_write(ws, _tr, 15, memo, bg=_tot_bg, fg=_tot_fg, ha='left', wrap=True, size=8)
+            ws.row_dimensions[_tr].height = 15
+            continue
+
+
+
         row  = data_dict.get(rn, {})
         bold = (rn in _IS_TOTAL) or (rn in _IS_GRAND)
 
@@ -3707,18 +3838,6 @@ def _write_block_rows(ws, xl_row, ranges, layout):
 
         # ---- 右側数値列（E〜N列 = col5〜14）★常に行の row_bg/row_fg で上書き ----
         # ★ 色の問題はここで正しい行の色で書き直すことで解消
-        num_cols = [
-            (5,  "前々期",           NUM_FMT,  "right"),
-            (6,  "前々期構成比",     PCT_FMT,  "center"),
-            (7,  "前期",             NUM_FMT,  "right"),
-            (8,  "前期構成比",       PCT_FMT,  "center"),
-            (9,  "前期前年比増加率", PCT_FMT,  "center"),
-            (10, "今期",             NUM_FMT,  "right"),
-            (11, "今期構成比",       PCT_FMT,  "center"),
-            (12, "今期前年比増加率", PCT_FMT,  "center"),
-            (13, "前期増減額",       DIFF_FMT, "right"),
-            (14, "今期増減額",       DIFF_FMT, "right"),
-        ]
         for (col, key, fmt, ha) in num_cols:
             raw = row.get(key)
             val = _to_pct(raw) if fmt == PCT_FMT else _to_num(raw)
@@ -4039,6 +4158,8 @@ def _write_keiei_sheet(wb, data_dict, closing_dates):
             debt_payback   = safe_div(bw,    net + dep),
             asset_turnover = safe_div(s,     ast),
             roa            = safe_pct(ord_p, ast),
+            roa_net        = safe_pct(net,   ast),
+            roe            = safe_pct(net,   eq),
         )
 
     bases   = {pk: base(pk)          for pk in pkeys}
@@ -4133,7 +4254,7 @@ def _write_keiei_sheet(wb, data_dict, closing_dates):
         )
         xl_row += 1
 
-    # ── 経営指標分析（7行）
+    # ── 経営指標分析（9行）
     index_items = [
         ("売上高粗利益率",   "gross_margin",   "％",  PCT_FMT),
         ("売上高営業利益率", "op_margin",       "％",  PCT_FMT),
@@ -4142,6 +4263,8 @@ def _write_keiei_sheet(wb, data_dict, closing_dates):
         ("債務償還年数",     "debt_payback",    "年",  YEAR_FMT),
         ("総資本回転率",     "asset_turnover",  "回",  YEAR_FMT),
         ("総資本経常利益率", "roa",             "％",  PCT_FMT),
+        ("ROA（当期純利益 ÷ 総資産 × 100）",   "roa_net",  "％",  PCT_FMT),
+        ("ROE（当期純利益 ÷ 自己資本 × 100）",  "roe",      "％",  PCT_FMT),
     ]
     for ii, (label, key, unit, fmt) in enumerate(index_items):
         vals = [(indices[pk][key], fmt) for pk in pkeys]
@@ -4714,7 +4837,6 @@ def calc_cf_from_data_dict(data_dict, closing_dates):
         ('Ⅴ　期首現金及び預金残高',0,'c47','c47'),
         ('Ⅵ　期末現金及び預金残高',0,'c48','c48'),
         ('検算（貸借対照表の現金及び預金）',2,'c49','c49'),
-        ('（照合）この欄が０でＯＫ→',99,'c50','c50'),
     ]
 
     def _val(d,key):
