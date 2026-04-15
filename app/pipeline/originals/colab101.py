@@ -4624,93 +4624,6 @@ def _write_hendo_pl_bep_sheet(wb, data_dict, closing_dates):
     return ws
 
 
-def generate_excel_report(output_path="/content/財務分析表.xlsx"):
-    # ★ data_dict に 前期増減額/今期増減額 が無い行を再計算してセット
-    PKEYS = ["前々期", "前期", "今期"]
-    for rn, row in data_dict.items():
-        try:
-            vv = float(row.get("前々期") or 0)
-            vp = float(row.get("前期")   or 0)
-            vc = float(row.get("今期")   or 0)
-        except:
-            continue
-        row["前期増減額"] = int(vp - vv)
-        row["今期増減額"] = int(vc - vp)
-        row["前期前年比増加率"] = int(round((vp / vv - 1) * 100)) if vv else 0
-        row["今期前年比増加率"] = int(round((vc / vp - 1) * 100)) if vp else 0
-
-    wb = openpyxl.Workbook()
-    ws = wb.active
-    ws.title = "財務諸表"
-
-    for ci, w in enumerate(_COL_WIDTHS, start=1):
-        ws.column_dimensions[get_column_letter(ci)].width = w
-    ws.sheet_format.defaultRowHeight = 15
-    ws.sheet_view.showGridLines = False
-
-    d_zy = closing_dates.get("前々期","")
-    d_zp = closing_dates.get("前期",  "")
-    d_zc = closing_dates.get("今期",  "")
-
-    xl_row = 1
-    for (ranges, title) in _BLOCKS:
-        all_s = min(s for s,e in ranges)
-        all_e = max(e for s,e in ranges)
-        layout = _xl_left_layout(all_s, all_e)
-
-        xl_row = _write_section_title(ws, xl_row, title)
-        xl_row = _write_header_rows(ws, xl_row, d_zy, d_zp, d_zc)
-        xl_row = _write_block_rows(ws, xl_row, ranges, layout)
-        xl_row += 1
-
-    # ── CF計算書シートを追加
-    try:
-        _cf = calc_cf_from_data_dict(data_dict, closing_dates)
-        _write_cf_sheet(wb, _cf)
-        print("✅ CF計算書シートを追加しました")
-    except Exception as _e:
-        print(f"⚠️ CF計算書シートの生成でエラー: {_e}")
-
-    # ── 経営指標シートを追加
-    try:
-        _write_keiei_sheet(wb, data_dict, closing_dates)
-        print("✅ 経営指標シートを追加しました")
-    except Exception as _e:
-        print(f"⚠️ 経営指標シートの生成でエラー: {_e}")
-
-    # ── 変動PL＆BEPシートを追加
-    try:
-        _write_hendo_pl_bep_sheet(wb, data_dict, closing_dates)
-        print("✅ 変動PL＆BEPシートを追加しました")
-    except Exception as _e:
-        print(f"⚠️ 変動PL＆BEPシートの生成でエラー: {_e}")
-
-    wb.save(output_path)
-    print(f"✅ Excelファイルを保存しました: {output_path}")
-    return output_path
-
-# 実行
-if (not DISABLE_EXCEL) and EXCEL_OUTPUT_PATH:
-    generate_excel_report(EXCEL_OUTPUT_PATH)
-# ---- Excel生成セル ここまで ----
-
-# デバッグ：増減額キーの確認
-_debug_rows = [r for r in list(data_dict.values()) if r.get("前期増減額") not in (None, 0, "", '""')]
-print(f"[DEBUG] 前期増減額が非ゼロの行数: {len(_debug_rows)}")
-if _debug_rows:
-    r0 = _debug_rows[0]
-    print(f"  サンプル行{r0['行番号']}: 前期増減額={r0.get('前期増減額')} 今期増減額={r0.get('今期増減額')}")
-else:
-    # 全行のキーを確認
-    if data_dict:
-        sample = next(iter(data_dict.values()))
-        print(f"  data_dictサンプルキー: {list(sample.keys())}")
-
-# 実行
-if (not DISABLE_EXCEL) and EXCEL_OUTPUT_PATH:
-    generate_excel_report(EXCEL_OUTPUT_PATH)
-# ---- Excel生成セル ここまで ----
-
 # ==================================================================
 # ★ CF計算書 生成（data_dict から計算）
 # ==================================================================
@@ -4852,6 +4765,97 @@ def calc_cf_from_data_dict(data_dict, closing_dates):
     return {'period_zenki':period_zenki,'period_konki':period_konki,'rows':rows}
 
 
+
+def generate_excel_report(output_path="/content/財務分析表.xlsx"):
+    # ★ data_dict に 前期増減額/今期増減額 が無い行を再計算してセット
+    PKEYS = ["前々期", "前期", "今期"]
+    for rn, row in data_dict.items():
+        try:
+            vv = float(row.get("前々期") or 0)
+            vp = float(row.get("前期")   or 0)
+            vc = float(row.get("今期")   or 0)
+        except:
+            continue
+        row["前期増減額"] = int(vp - vv)
+        row["今期増減額"] = int(vc - vp)
+        row["前期前年比増加率"] = int(round((vp / vv - 1) * 100)) if vv else 0
+        row["今期前年比増加率"] = int(round((vc / vp - 1) * 100)) if vp else 0
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "財務諸表"
+
+    for ci, w in enumerate(_COL_WIDTHS, start=1):
+        ws.column_dimensions[get_column_letter(ci)].width = w
+    ws.sheet_format.defaultRowHeight = 15
+    ws.sheet_view.showGridLines = False
+
+    d_zy = closing_dates.get("前々期","")
+    d_zp = closing_dates.get("前期",  "")
+    d_zc = closing_dates.get("今期",  "")
+
+    xl_row = 1
+    for (ranges, title) in _BLOCKS:
+        all_s = min(s for s,e in ranges)
+        all_e = max(e for s,e in ranges)
+        layout = _xl_left_layout(all_s, all_e)
+
+        xl_row = _write_section_title(ws, xl_row, title)
+        xl_row = _write_header_rows(ws, xl_row, d_zy, d_zp, d_zc)
+        xl_row = _write_block_rows(ws, xl_row, ranges, layout)
+        xl_row += 1
+
+    # ── CF計算書シートを追加
+    try:
+        _cf = calc_cf_from_data_dict(data_dict, closing_dates)
+        _write_cf_sheet(wb, _cf)
+        print("✅ CF計算書シートを追加しました")
+    except Exception as _e:
+        print(f"⚠️ CF計算書シートの生成でエラー: {_e}")
+
+    # ── 経営指標シートを追加
+    try:
+        _write_keiei_sheet(wb, data_dict, closing_dates)
+        print("✅ 経営指標シートを追加しました")
+    except Exception as _e:
+        print(f"⚠️ 経営指標シートの生成でエラー: {_e}")
+
+    # ── 変動PL＆BEPシートを追加
+    try:
+        _write_hendo_pl_bep_sheet(wb, data_dict, closing_dates)
+        print("✅ 変動PL＆BEPシートを追加しました")
+    except Exception as _e:
+        print(f"⚠️ 変動PL＆BEPシートの生成でエラー: {_e}")
+
+    wb.save(output_path)
+    print(f"✅ Excelファイルを保存しました: {output_path}")
+    return output_path
+
+# 実行
+if (not DISABLE_EXCEL) and EXCEL_OUTPUT_PATH:
+    generate_excel_report(EXCEL_OUTPUT_PATH)
+# ---- Excel生成セル ここまで ----
+
+# デバッグ：増減額キーの確認
+_debug_rows = [r for r in list(data_dict.values()) if r.get("前期増減額") not in (None, 0, "", '""')]
+print(f"[DEBUG] 前期増減額が非ゼロの行数: {len(_debug_rows)}")
+if _debug_rows:
+    r0 = _debug_rows[0]
+    print(f"  サンプル行{r0['行番号']}: 前期増減額={r0.get('前期増減額')} 今期増減額={r0.get('今期増減額')}")
+else:
+    # 全行のキーを確認
+    if data_dict:
+        sample = next(iter(data_dict.values()))
+        print(f"  data_dictサンプルキー: {list(sample.keys())}")
+
+# 実行
+if (not DISABLE_EXCEL) and EXCEL_OUTPUT_PATH:
+    generate_excel_report(EXCEL_OUTPUT_PATH)
+# ---- Excel生成セル ここまで ----
+
+# ==================================================================
+# ★ CF計算書 生成（data_dict から計算）
+# ==================================================================
 def generate_cf_html(cf_data):
     period_konki=cf_data['period_konki']; period_zenki=cf_data['period_zenki']
     rows=cf_data['rows']
