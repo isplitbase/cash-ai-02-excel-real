@@ -3224,7 +3224,8 @@ window._rebuildCFTable = function(){
       var H18=rv(64,p_from)-H16-H17, I18=rv(64,p_to)-I16-I17, J18=I18-H18;
       var J22=rv(66,p_to)-rv(66,p_from), J23=rv(67,p_to)-rv(67,p_from), J25=rv(72,p_to)-rv(72,p_from);
 
-      var c9=Math.round(rv(112,p_to)-rv(119,p_to)-rv(139,p_to)+rv(145,p_to)-rv(148,p_to)+rv(150,p_to)-rv(151,p_to)-rv(153,p_to));
+      var r154 = window.reportData ? window.reportData.find(function(r){return r["行番号"]===154;}) : null;
+      var c9 = r154 ? Math.round(parseFloat(r154[p_to])||0) : 0;
       // 減価償却費: 行161（行90+125+126）
       var dep161 = rv(161, p_to);
       if (dep161 === 0) dep161 = rv(90,p_to)+rv(125,p_to)+rv(126,p_to);
@@ -4668,12 +4669,12 @@ def calc_cf_from_data_dict(data_dict, closing_dates):
         H18=rv(69,p_from)-H16-H17; I18=rv(69,p_to)-I16-I17; J18=I18-H18
         J22=rv(71,p_to)-rv(71,p_from); J23=rv(72,p_to)-rv(72,p_from); J25=rv(77,p_to)-rv(77,p_from)
 
-        当期純利益=int(rv(129,p_to)-rv(136,p_to)-rv(156,p_to)+rv(162,p_to)-rv(165,p_to)+rv(167,p_to)-rv(168,p_to)-rv(170,p_to))
+        def dd(row_no): return float(data_dict.get(row_no, {}).get(p_to, 0) or 0)
+        当期純利益 = int(dd(154))
         減価償却費=int(rv(182,p_to))
         引当金=int(J13+J18-E16-E25)
 
         def i(v): return int(v)
-        def dd(row_no): return float(data_dict.get(row_no, {}).get(p_to, 0) or 0)
 
         # 役員賞与・配当金：繰越利益剰余金(行70)の増減から完全自動計算
         # 繰越利益増減 = 当期純利益 - 配当金 - 役員賞与
